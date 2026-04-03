@@ -14,7 +14,7 @@ import { api as telegramApi } from './telegram_api'
 import i18n from './i18n';
 import { email } from './email';
 import { scheduled } from './scheduled';
-import { getPasswords, getBooleanValue, getStringArray, checkIsAdmin } from './utils';
+import { getPasswords, getBooleanValue, getStringArray, checkIsAdmin, getAdminPasswords } from './utils';
 import { checkAccessControl } from './ip_blacklist';
 
 const API_PATHS = [
@@ -216,17 +216,17 @@ app.use('/user_api/*', async (c, next) => {
 // admin auth
 app.use('/admin/*', async (c, next) => {
 
-	// --- 1. 新增：支援 URL 參數登入 (?password=xxx) ---
+	// --- 【修改部分】支援 URL 參數登入 ---
 	const url = new URL(c.req.raw.url);
 	const urlPassword = url.searchParams.get("password");
-	const adminPasswords = getPasswords(c);
+	const adminPasswords = getAdminPasswords(c);
 
 	if (urlPassword && adminPasswords && adminPasswords.includes(urlPassword)) {
 		await next();
 		return;
 	}
 
-	// --- 2. 原本的：check header x-admin-auth ---
+	// --- 原本的驗證邏輯 ---
 	if (checkIsAdmin(c)) {
 		await next();
 		return;
@@ -234,22 +234,20 @@ app.use('/admin/*', async (c, next) => {
 	
 	const lang = c.req.raw.headers.get("x-lang") || c.env.DEFAULT_LANG;
 	const msgs = i18n.getMessages(lang);
-	// check if user is admin
+	
+	// check if user is admin (via role payload)
 	const access_token = c.req.raw.headers.get("x-user-access-token");
 	if (c.env.ADMIN_USER_ROLE && access_token) {
 		try {
 			const payload = await Jwt.verify(access_token, c.env.JWT_SECRET, "HS256");
-			// check expired
 			if (!payload.exp) return c.text(msgs.UserAcceesTokenExpiredMsg, 401);
-			// exp is in seconds
 			if (payload.exp < Math.floor(Date.now() / 1000)) {
 				return c.text(msgs.UserAcceesTokenExpiredMsg, 401)
 			}
-			if (payload.user_role !== c.env.ADMIN_USER_ROLE) {
-				return c.text(msgs.UserRoleIsNotAdminMsg, 401)
+			if (payload.user_role === c.env.ADMIN_USER_ROLE) {
+				await next();
+				return;
 			}
-			await next();
-			return;
 		} catch (e) {
 			console.error(e);
 		}

@@ -212,14 +212,26 @@ app.use('/user_api/*', async (c, next) => {
 	}
 	await next();
 });
+
 // admin auth
 app.use('/admin/*', async (c, next) => {
 
-	// check header x-admin-auth
+	// --- 1. 新增：支援 URL 參數登入 (?password=xxx) ---
+	const url = new URL(c.req.raw.url);
+	const urlPassword = url.searchParams.get("password");
+	const adminPasswords = getPasswords(c);
+
+	if (urlPassword && adminPasswords && adminPasswords.includes(urlPassword)) {
+		await next();
+		return;
+	}
+
+	// --- 2. 原本的：check header x-admin-auth ---
 	if (checkIsAdmin(c)) {
 		await next();
 		return;
 	}
+	
 	const lang = c.req.raw.headers.get("x-lang") || c.env.DEFAULT_LANG;
 	const msgs = i18n.getMessages(lang);
 	// check if user is admin

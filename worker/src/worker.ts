@@ -216,7 +216,13 @@ app.use('/user_api/*', async (c, next) => {
 // admin auth
 app.use('/admin/*', async (c, next) => {
 
-	// --- 【修改部分】支援 URL 參數登入 ---
+	// 1. 【修復】如果環境變數設定為 true，直接放行所有管理員 API
+	if (getBooleanValue(c.env.DISABLE_ADMIN_PASSWORD_CHECK)) {
+		await next();
+		return;
+	}
+
+	// 2. 支援 URL 參數登入 (?password=xxx)
 	const url = new URL(c.req.raw.url);
 	const urlPassword = url.searchParams.get("password");
 	const adminPasswords = getAdminPasswords(c);
@@ -226,7 +232,7 @@ app.use('/admin/*', async (c, next) => {
 		return;
 	}
 
-	// --- 原本的驗證邏輯 ---
+	// 3. 原本的驗證邏輯 (Header x-admin-auth)
 	if (checkIsAdmin(c)) {
 		await next();
 		return;
@@ -253,12 +259,6 @@ app.use('/admin/*', async (c, next) => {
 		}
 	}
 
-	// disable admin api check
-	if (getBooleanValue(c.env.DISABLE_ADMIN_PASSWORD_CHECK)) {
-		await next();
-		return;
-	}
-
 	return c.text(msgs.NeedAdminPasswordMsg, 401)
 });
 
@@ -270,6 +270,12 @@ app.route('/', userApi)
 app.route('/', adminApi)
 app.route('/', apiSendMail)
 app.route('/', telegramApi)
+
+// 【關鍵修復】路徑重導向：如果程式請求 /admin/new_address，手動對接到 adminApi 的處理器
+// 解決程式碼找不到後端路由導致的 404
+app.all('/admin/new_address', async (c) => {
+	return adminApi.fetch(c.req.raw, c.env, c.executionCtx);
+});
 
 const health_check = async (c: Context<HonoCustomType>) => {
 	const lang = c.req.raw.headers.get("x-lang") || c.env.DEFAULT_LANG;
